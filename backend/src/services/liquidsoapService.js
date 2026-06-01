@@ -28,10 +28,12 @@ const { pool }  = require('../config/db');
 const LIQ_DIR      = path.join(__dirname, '../../liq');
 const PLAYLIST_DIR = path.join(__dirname, '../../playlists');
 const METADATA_DIR = path.join(__dirname, '../../metadata');
+const AUTH_DIR     = path.join(__dirname, '../../auth');
 
 fs.ensureDirSync(LIQ_DIR);
 fs.ensureDirSync(PLAYLIST_DIR);
 fs.ensureDirSync(METADATA_DIR);
+fs.ensureDirSync(AUTH_DIR);
 
 // mount_point → child process
 const processes = {};
@@ -57,6 +59,31 @@ const writePlaylist = (mount_point, tracks = []) => {
     .join('\n');
   fs.writeFileSync(playlistPath, lines + '\n');
   return playlistPath;
+};
+
+// ── Harbor auth (HOT — no restart) ────────────────────────────────────────────
+
+const authFilePath = (mount_point) =>
+  path.join(AUTH_DIR, `${mount_point.replace(/\//g, '_')}.pw`);
+
+/**
+ * Write the list of valid harbor passwords for a station, one per line.
+ * The generated .liq script reads this file on EVERY connection attempt, so
+ * adding/removing/deactivating a broadcaster takes effect immediately — no
+ * Liquidsoap restart and no backend restart required.
+ *
+ * Falls back to the station source_password when there are no active
+ * broadcasters (preserves the previous behaviour so the owner/AutoDJ can
+ * still connect).
+ */
+const writeHarborPasswords = (station, broadcasters = []) => {
+  const pwPath = authFilePath(station.mount_point);
+  const passwords = (broadcasters.length > 0
+    ? broadcasters.map(b => b.password)
+    : [station.source_password]
+  ).filter(Boolean);
+  fs.writeFileSync(pwPath, passwords.join('\n') + '\n');
+  return pwPath;
 };
 
 // ── Socket control ────────────────────────────────────────────────────────────
@@ -142,9 +169,11 @@ const regenerateLiqScript = (station, broadcasters = []) => {
   // "randomize" = shuffle, "normal" = sequential
   const playMode = (autodj_mode === 'sequential') ? 'normal' : 'randomize';
 
-  const harborPasswords = broadcasters.length > 0
-    ? broadcasters.map(b => `"${b.password}"`).join(', ')
-    : `"${source_password}"`;
+  // Harbor auth is DYNAMIC: passwords live in a file that the .liq script
+  // reads on every connection. Write it now so it exists on first start, and
+  // so cold starts (startAllStations) always have the current passwords.
+  writeHarborPasswords(station, broadcasters);
+  const authFileLiq = toWslPath(authFilePath(mount_point));
 
   const script = `# RadioStudio — AutoDJ Script v6.1
 # Station : ${name}
@@ -162,9 +191,18 @@ settings.server.socket := true
 settings.server.socket.path := "${sockLiq}"
 
 # ── 1. Live broadcaster input ─────────────────────────────────────────────────
+# Passwords are read from a file on EVERY connection attempt, so broadcaster
+# changes take effect instantly — no restart of Liquidsoap or the backend.
 def auth(args) =
-  password = args.password
-  list.mem(password, [${harborPasswords}])
+  pass = args.password
+  pwfile = "${authFileLiq}"
+  if file.exists(pwfile) then
+    lines = string.split(separator="\n", file.contents(pwfile))
+    allowed = list.filter(fun(s) -> s != "", list.map(string.trim, lines))
+    list.mem(pass, allowed)
+  else
+    false
+  end
 end
 
 live = input.harbor(
@@ -423,6 +461,8 @@ const getLiqStatus = (mount_point) => fs.existsSync(path.join(LIQ_DIR, `${mount_
 
 module.exports = {
   writePlaylist,
+  writeHarborPasswords,
+  authFilePath,
   regenerateLiqScript,
   generateLiqScript,
   startLiquidsoap,
@@ -439,4 +479,5 @@ module.exports = {
   LIQ_DIR,
   PLAYLIST_DIR,
   METADATA_DIR,
+  AUTH_DIR,
 };

@@ -2,8 +2,8 @@ const { pool } = require('../config/db');
 const { reloadIcecast } = require('../services/icecastService');
 const {
   regenerateLiqScript,
+  writeHarborPasswords,
   startLiquidsoap,
-  stopLiquidsoapAndWait,
   isRunning,
   sendCommand,
 } = require('../services/liquidsoapService');
@@ -57,22 +57,25 @@ const kickLiveBroadcaster = async (mount_point) => {
 };
 
 /**
- * Rebuild the .liq script and restart Liquidsoap so the auth() password
- * list takes effect immediately.
+ * Apply a broadcaster change so the new password set takes effect.
  *
- * FIX v6.1: Uses stopLiquidsoapAndWait() before regenerating and restarting.
- * This waits 2.5s after SIGTERM so the OS releases the harbor port before
- * the new process tries to bind it — fixing "Address already in use".
+ * Harbor auth is now DYNAMIC — the running Liquidsoap process reads the valid
+ * passwords from a file on every connection attempt. So all we MUST do to make
+ * an add / edit / deactivate take effect is rewrite that file. No Liquidsoap
+ * restart, no Icecast restart, and no backend restart needed.
+ *
+ * This is why the previous version broke on the Azure VM: it depended on
+ * `reloadIcecast()` and a full Liquidsoap restart succeeding. If the Icecast
+ * restart errored or hung on the server, the function threw before the harbor
+ * was updated, so new passwords were rejected until a manual backend restart.
  *
  * Flow:
- *   1. Reload Icecast config (updates mount blocks)
- *   2. Stop current Liquidsoap + wait 2.5s for port release
- *   3. Regenerate .liq script with updated broadcaster passwords
- *   4. Start fresh Liquidsoap process
+ *   1. Rewrite the harbor password file (instant, authoritative).
+ *   2. Keep the .liq script in sync for the next cold start (no restart).
+ *   3. Start Liquidsoap only if it is not already running for this station.
+ *   4. Best-effort Icecast refresh — non-fatal, cannot block the auth update.
  */
 const reloadAfterBroadcasterChange = async (stationId) => {
-  await reloadIcecast();
-
   const stationRes = await pool.query('SELECT * FROM stations WHERE id=$1', [stationId]);
   if (stationRes.rows.length === 0) return;
   const station = stationRes.rows[0];
@@ -82,16 +85,36 @@ const reloadAfterBroadcasterChange = async (stationId) => {
     [stationId]
   );
 
-  // KEY FIX: stop and wait BEFORE regenerating the script and starting fresh.
-  // Without this wait, the new process tries to bind the harbor port while
-  // the old one is still shutting down → "Address already in use".
-  console.log(`⏳ Waiting for port release on ${station.mount_point}...`);
-  await stopLiquidsoapAndWait(station.mount_point, 2500);
+  // 1. CRITICAL & INSTANT: the running harbor reads this file on every connect.
+  writeHarborPasswords(station, bRes.rows);
+  console.log(`🔐 Harbor passwords updated for "${station.name}" — ${bRes.rows.length} active broadcaster(s)`);
 
-  regenerateLiqScript(station, bRes.rows);
-  await startLiquidsoap(station);
+  // 2. Keep the generated script consistent for the next cold start.
+  //    This does NOT restart the running process.
+  try {
+    regenerateLiqScript(station, bRes.rows);
+  } catch (e) {
+    console.warn(`⚠️  regenerateLiqScript failed (non-fatal): ${e.message}`);
+  }
 
-  console.log(`✅ Liquidsoap restarted for "${station.name}" with ${bRes.rows.length} active broadcaster(s)`);
+  // 3. Ensure Liquidsoap is up. If it is already running we leave it alone —
+  //    dynamic auth already has the new passwords, so no restart is needed.
+  try {
+    if (!isRunning(station.mount_point)) {
+      console.log(`▶️  Liquidsoap not running for ${station.mount_point} — starting it`);
+      await startLiquidsoap(station);
+    }
+  } catch (e) {
+    console.warn(`⚠️  startLiquidsoap failed (non-fatal): ${e.message}`);
+  }
+
+  // 4. Best-effort Icecast refresh. Harbor auth does NOT depend on this, so a
+  //    failure here can no longer block broadcaster password updates.
+  try {
+    await reloadIcecast();
+  } catch (e) {
+    console.warn(`⚠️  reloadIcecast failed (non-fatal): ${e.message}`);
+  }
 };
 
 const createBroadcaster = async (req, res) => {
