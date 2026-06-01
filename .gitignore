@@ -1,0 +1,14 @@
+# dependencies
+node_modules/
+
+# production build output
+frontend/build/
+
+# secrets & local environment (rotate any that were ever committed!)
+backend/.env
+
+# generated harbor auth files — contain plaintext broadcaster passwords
+backend/auth/
+
+# logs
+*.log
