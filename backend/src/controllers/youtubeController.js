@@ -17,6 +17,7 @@
 
 const { exec } = require('child_process');
 const path = require('path');
+const fs = require('fs');
 const { pool } = require('../config/db');
 const {
   writePlaylist,
@@ -35,19 +36,59 @@ const getYtDlpBin = () => {
   return process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp';
 };
 
+// Resolve the cookies file: prefer YT_DLP_COOKIES, but fall back to the
+// repo's backend/cookies.txt so a wrong/empty env var doesn't silently
+// disable cookies. Returns the --cookies args (or [] if no file found).
+const getCookiesArgs = () => {
+  const candidates = [
+    process.env.YT_DLP_COOKIES,
+    path.join(__dirname, '..', '..', 'cookies.txt'),
+  ].filter(Boolean);
+  for (const c of candidates) {
+    try {
+      if (fs.existsSync(c)) return ['--cookies', `"${c}"`];
+    } catch (_) { /* ignore */ }
+  }
+  if (process.env.YT_DLP_COOKIES) {
+    console.warn(`⚠️  YT_DLP_COOKIES is set to "${process.env.YT_DLP_COOKIES}" but the file does not exist — running yt-dlp WITHOUT cookies.`);
+  }
+  return [];
+};
+
+// Which Innertube clients to use. On datacenter IPs (Azure/AWS/GCP) the
+// `web`/`mweb`/`tv` clients are blocked or require a PO token, while the
+// `android_vr` client still works. Override via YT_DLP_PLAYER_CLIENT.
+const getExtractorArgs = () => {
+  const args = [];
+  const client = process.env.YT_DLP_PLAYER_CLIENT || 'default,android_vr';
+  args.push('--extractor-args', `"youtube:player_client=${client}"`);
+  if (process.env.YT_DLP_PO_TOKEN) {
+    args.push('--extractor-args', `"youtube:po_token=${process.env.YT_DLP_PO_TOKEN}"`);
+  }
+  return args;
+};
+
+// Optional outbound proxy (residential/rotating). The only reliable way
+// around a hard datacenter-IP block. Set YT_DLP_PROXY in .env.
+const getProxyArgs = () => {
+  const proxy = process.env.YT_DLP_PROXY || process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
+  return proxy ? ['--proxy', `"${proxy}"`] : [];
+};
+
 const extractYouTubeInfo = (youtubeUrl) =>
   new Promise((resolve, reject) => {
     const bin = getYtDlpBin();
 
-        const cmd = [
+    const cmd = [
       bin,
-      ...(process.env.YT_DLP_COOKIES ? ['--cookies', process.env.YT_DLP_COOKIES] : []),
+      ...getCookiesArgs(),
+      ...getProxyArgs(),
+      ...getExtractorArgs(),
       '--js-runtimes', 'node',
       '--no-playlist',
-      '--js-runtimes', 'node',
       '--no-warnings',
       '--no-check-certificates',
-      '-f', 'bestaudio',
+      '-f', 'bestaudio/best',
       '--print', 'title',
       '--print', 'duration_string',
       '--print', 'url',
@@ -74,8 +115,25 @@ const extractYouTubeInfo = (youtubeUrl) =>
         if (msg.includes('Video unavailable') || msg.includes('Private video'))
           return reject(new Error('This YouTube video is unavailable or private.'));
 
-        if (msg.includes('Sign in') || msg.includes('age-restricted'))
-          return reject(new Error('This video requires sign-in or is age-restricted.'));
+        if (msg.includes('age-restricted'))
+          return reject(new Error('This video is age-restricted and needs a logged-in account (cookies).'));
+
+        // YouTube bot / datacenter-IP block. Cookies + an up-to-date yt-dlp
+        // usually fixes it; a residential proxy (YT_DLP_PROXY) is the last resort.
+        if (
+          msg.includes('Sign in to confirm') ||
+          msg.includes('confirm you') ||
+          msg.includes('not a bot') ||
+          msg.includes('Sign in') ||
+          msg.includes('HTTP Error 403') ||
+          msg.includes('Requested format is not available')
+        ) {
+          return reject(new Error(
+            'YouTube is blocking this server (datacenter IP). Fixes: 1) update yt-dlp on the server ' +
+            '(`yt-dlp -U` or `pip install -U yt-dlp`), 2) make sure cookies.txt is valid and YT_DLP_COOKIES ' +
+            'points to it, 3) as a last resort set YT_DLP_PROXY to a residential proxy.'
+          ));
+        }
 
         return reject(new Error(`yt-dlp error: ${msg.slice(0, 300)}`));
       }
