@@ -1,0 +1,131 @@
+<icecast>
+  <location>Earth</location>
+  <admin>admin@radiostudio.local</admin>
+
+  <limits>
+    <clients>1000</clients>
+    <sources>100</sources>
+    <queue-size>524288</queue-size>
+    <client-timeout>30</client-timeout>
+    <header-timeout>15</header-timeout>
+    <source-timeout>10</source-timeout>
+    <burst-on-connect>1</burst-on-connect>
+    <burst-size>65535</burst-size>
+  </limits>
+
+  <authentication>
+    <source-password>changeme</source-password>
+    <relay-password>changeme</relay-password>
+    <admin-user>admin</admin-user>
+    <admin-password>adminpass123</admin-password>
+  </authentication>
+
+  <hostname>localhost</hostname>
+
+  <listen-socket>
+    <port>8000</port>
+  </listen-socket>
+
+  
+    <!-- Broadcaster: Driii (@driano) -->
+    <mount type="normal">
+      <mount-name>/adriano-mphghcyn</mount-name>
+      <password>dri</password>
+      <max-listeners>500</max-listeners>
+      <public>1</public>
+      <stream-name>adriano</stream-name>
+      <stream-description></stream-description>
+      <genre>Various</genre>
+    </mount>
+    <!-- Broadcaster: h (@hello) -->
+    <mount type="normal">
+      <mount-name>/h-mpidy1ow</mount-name>
+      <password>h</password>
+      <max-listeners>500</max-listeners>
+      <public>1</public>
+      <stream-name>h</stream-name>
+      <stream-description></stream-description>
+      <genre>Various</genre>
+    </mount>
+    <!-- Broadcaster: anis (@anis) -->
+    <mount type="normal">
+      <mount-name>/b-mpifetcq</mount-name>
+      <password>anis</password>
+      <max-listeners>500</max-listeners>
+      <public>1</public>
+      <stream-name>b</stream-name>
+      <stream-description>b</stream-description>
+      <genre>b</genre>
+    </mount>
+    <!-- Broadcaster: alo (@alo) -->
+    <mount type="normal">
+      <mount-name>/gringo-mpeo5svt</mount-name>
+      <password>1111</password>
+      <max-listeners>500</max-listeners>
+      <public>1</public>
+      <stream-name>Gringo</stream-name>
+      <stream-description>Gringo</stream-description>
+      <genre>Various</genre>
+    </mount>
+    <!-- Broadcaster: Dj Adriano (@Pau de elefante) -->
+    <mount type="normal">
+      <mount-name>/gringo-mpeo5svt</mount-name>
+      <password>manototoso</password>
+      <max-listeners>500</max-listeners>
+      <public>1</public>
+      <stream-name>Gringo</stream-name>
+      <stream-description>Gringo</stream-description>
+      <genre>Various</genre>
+    </mount>
+    <!-- Broadcaster: Hi (@Hi) -->
+    <mount type="normal">
+      <mount-name>/gringo-mpeo5svt</mount-name>
+      <password>hi</password>
+      <max-listeners>500</max-listeners>
+      <public>1</public>
+      <stream-name>Gringo</stream-name>
+      <stream-description>Gringo</stream-description>
+      <genre>Various</genre>
+    </mount>
+    <!-- Broadcaster: Loki (@Dj Loki) -->
+    <mount type="normal">
+      <mount-name>/gringo-mpeo5svt</mount-name>
+      <password>loki</password>
+      <max-listeners>500</max-listeners>
+      <public>1</public>
+      <stream-name>Gringo</stream-name>
+      <stream-description>Gringo</stream-description>
+      <genre>Various</genre>
+    </mount>
+    <!-- Broadcaster: dj (@dj) -->
+    <mount type="normal">
+      <mount-name>/gringo-mpeo5svt</mount-name>
+      <password>3222</password>
+      <max-listeners>500</max-listeners>
+      <public>1</public>
+      <stream-name>Gringo</stream-name>
+      <stream-description>Gringo</stream-description>
+      <genre>Various</genre>
+    </mount>
+
+  <fileserve>1</fileserve>
+
+  <paths>
+    <basedir>/usr/share/icecast2</basedir>
+    <logdir>/var/log/icecast2</logdir>
+    <webroot>/usr/share/icecast2/web</webroot>
+    <adminroot>/usr/share/icecast2/admin</adminroot>
+    <pidfile>/var/run/icecast2/icecast2.pid</pidfile>
+  </paths>
+
+  <logging>
+    <accesslog>access.log</accesslog>
+    <errorlog>error.log</errorlog>
+    <loglevel>3</loglevel>
+    <logsize>10000</logsize>
+  </logging>
+
+  <security>
+    <chroot>0</chroot>
+  </security>
+</icecast>
